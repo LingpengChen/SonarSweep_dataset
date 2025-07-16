@@ -4,21 +4,9 @@ from pathlib import Path
 import sys
 from tqdm import tqdm  # 导入tqdm
 
-SONAR_INTRINSIC_CONTENT = """# scalar1: max_range
-# scalar2: range_res
-# scalar3: img_height
-# scalar4: hori_fov
-# scalar5: vert_fov
-# scalar6: angular_res
-# scalar7: img_width
-5.0
-0.005
-1000
-60.0
-12.0
-0.4
-150
-"""
+
+clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+
 
 def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float):
     """
@@ -102,6 +90,7 @@ def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float):
             continue  # 静默跳过不存在的文件
 
         output_path = scene_dir / f"cropped_{filename}"
+        enhanced_gray_output_path = scene_dir / f"enhanced_gray_{filename}"
         
         try:
             # rgb
@@ -109,6 +98,10 @@ def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float):
                 img = cv2.imread(str(input_path), cv2.IMREAD_UNCHANGED)
                 cropped_img = img[y1:y2, x1:x2]
                 cv2.imwrite(str(output_path), cropped_img)
+                gray_standard = cv2.cvtColor(cropped_img, cv2.COLOR_BGR2GRAY)
+                enhanced_gray_standard = clahe.apply(gray_standard)
+                cv2.imwrite(str(enhanced_gray_output_path), enhanced_gray_standard)
+                
             
             elif filename.endswith('.npy'):
                 data = np.load(input_path)
@@ -130,16 +123,6 @@ def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float):
 
     new_intrinsic_path = scene_dir / 'cropped_cam_intrinsic.txt'
     np.savetxt(new_intrinsic_path, new_intrinsics, fmt='%.6f', delimiter=' ')
-    
-    # --- 新增内容 ---
-    # 6. 创建/覆盖 sonar_intrinsic.txt 文件
-    # try:
-    #     sonar_intrinsic_path = scene_dir / 'sonar_intrinsic.txt'
-    #     with open(sonar_intrinsic_path, 'w', encoding='utf-8') as f:
-    #         f.write(SONAR_INTRINSIC_CONTENT)
-    # except Exception as e:
-    #     print(f"\n[Error] Failed to write sonar_intrinsic.txt in {scene_dir.name}: {e}")
-        
     
 
 if __name__ == '__main__':

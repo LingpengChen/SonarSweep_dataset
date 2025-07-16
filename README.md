@@ -82,7 +82,7 @@
         注意T_camright2sonar是在相机坐标系下的变换(i.e.z轴方向为相机朝向，x轴朝右)
         cam_right_pose是在世界坐标系(刚体坐标系)下，cam_right_link的pose, z轴朝天上
 
-2. fast_crop_images.py
+2. crop_and_enhance_images.py
     遍历并处理每个单个场景文件夹：根据新的FOV（sonar的FOV）裁剪图像并更新相机内参。并进行图像增强（标准灰度图 + CLAHE）
 
     未来可能操作：
@@ -98,4 +98,3 @@
 ### some useful command
 rosbag filter dataset.bag 1.bag "t.to_sec() <= 1752220844.72 + 65.0"
 rosbag play -r 10 1.bag # SonarSweep_dataset
-# SonarSweep_dataset
