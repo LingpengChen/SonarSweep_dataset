@@ -1,6 +1,7 @@
-/raw_dataset/
+/raw_dataset/*
 !/raw_dataset/retrieve_background_image.py
 /shenyuan.zip
 /processed_dataset/
 __pycache__/
 .vscode/
+
