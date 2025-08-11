@@ -281,10 +281,12 @@ def main():
         rospy.set_param('/use_sim_time', True)
     except Exception as e:
         print(f"Could not set /use_sim_time: {e}")
-        
+    
+    sonar_type = "vfov12hfov60"
+    # sonar_type = "vfov20hfov130"
     parser = argparse.ArgumentParser(description="Process ROS bags to extract synchronized sensor data.")
-    parser.add_argument('--input_dir', type=str, default='raw_dataset/vfov12hfov60', help='Path to the raw dataset directory.')
-    parser.add_argument('--output_dir', type=str, default='processed_dataset/vfov12hfov60', help='Path to the output directory.')
+    parser.add_argument('--input_dir', type=str, default=f'raw_dataset/{sonar_type}', help='Path to the raw dataset directory.')
+    parser.add_argument('--output_dir', type=str, default=f'processed_dataset/{sonar_type}', help='Path to the output directory.')
     args = parser.parse_args()
 
     if not os.path.isdir(args.input_dir):
@@ -300,7 +302,8 @@ def main():
     scenario_folders = sorted([d for d in os.listdir(args.input_dir) if os.path.isdir(os.path.join(args.input_dir, d))])
     
     for scenario_name in tqdm(scenario_folders, desc="Scenarios"):
-        
+        if scenario_name != 'blue_water_visual_degraded': continue
+        print(f"Processing scenario: {scenario_name}")
         scenario_path = os.path.join(args.input_dir, scenario_name)
         
         # get background sonar image for denoising    
@@ -311,14 +314,25 @@ def main():
             # MODIFIED: 计算平均背景图，现在从图像文件读取
             avg_background_np_float = compute_average_background(BACKGROUND_DATA_DIR, img_format=IMAGE_FORMAT)
             avg_background_np = np.clip(avg_background_np_float, 0, 255).astype(np.uint8)
-
-            # cv2.imshow('avg_background_np', avg_background_np)
+            # MODIFIED: 保存平均背景图
+            cv2.imwrite(f'./denoise/avg_background_{sonar_type}.png', avg_background_np)
+            print(f"Average background image computed and saved to './denoise/avg_background_{sonar_type}.png'")
             MODEL_PATH = './denoise/model/scunet_gray_25.pth'
             sonar_denoiser = SonarDenoiser(MODEL_PATH, avg_background_np)
-            
+          
         
         except Exception as e:
             print(f"Cannot find background data at {BACKGROUND_DATA_DIR}: Detailed error {e}")
+            try: # try to load the default background
+                avg_background_np = cv2.imread(f'./denoise/avg_background_{sonar_type}.png', cv2.IMREAD_GRAYSCALE)
+                if avg_background_np is None:
+                    raise FileNotFoundError("Default background image not found.")
+                else:
+                    print(f"Default background image loaded from './denoise/avg_background_{sonar_type}.png'")
+                sonar_denoiser = SonarDenoiser('./denoise/model/scunet_gray_25.pth', avg_background_np)
+            except Exception as e:
+                print(f"Cannot load default background image: {e}")
+                sys.exit(1)
         
         
         # now look into each bag in the scenerio
@@ -326,11 +340,12 @@ def main():
             file_path for file_path in glob.glob(os.path.join(scenario_path, '*.bag'))
             if os.path.basename(file_path) != 'background.bag'
         )
-        print(bag_files)
         # ['raw_dataset/green_water1/1.bag', 'raw_dataset/green_water1/10.bag', 'raw_dataset/green_water1/2.bag', 'raw_dataset/green_water1/3.bag', 'raw_dataset/green_water1/4.bag', 'raw_dataset/green_water1/5.bag', 'raw_dataset/green_water1/6.bag', 'raw_dataset/green_water1/7.bag', 'raw_dataset/green_water1/8.bag', 'raw_dataset/green_water1/9.bag', 'raw_dataset/green_water1/circular1.bag', 'raw_dataset/green_water1/circular2.bag', 'raw_dataset/green_water1/circular3.bag']
         if not bag_files:
             print(f"Warning: No .bag files found in {scenario_path}")
             continue
+        else:
+            print(f"Found {len(bag_files)} bag files in {scenario_path}:")
         
         for bag_file in bag_files:
             # 从完整路径中提取不带 .bag 后缀的文件名
@@ -343,7 +358,7 @@ def main():
             # 注意：process_bag现在返回的是这个bag处理的帧数，我们不再需要用它来累加
             output_folder_base = os.path.join(args.output_dir, f"{scenario_name}_{bag_name_without_ext}" )
             process_bag(bag_file, output_folder_base, sonar_denoiser, tf_buffer)
-
+        break
     print("\nProcessing complete!")
 
 if __name__ == '__main__':

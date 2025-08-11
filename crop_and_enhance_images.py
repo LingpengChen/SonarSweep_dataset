@@ -18,6 +18,11 @@ def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float):
         hori_fov_deg (float): 新的目标水平视场角（度）。
         vert_fov_deg (float): 新的目标垂直视场角（度）。
     """
+    # 检查是否已经处理过（通过检查cropped_cam_intrinsic.txt是否存在）
+    new_intrinsic_path = scene_dir / 'cropped_cam_intrinsic.txt'
+    if new_intrinsic_path.exists():
+        return  # 已经处理过，跳过
+        
     # 1. 定义文件路径
     intrinsic_path = scene_dir / 'cam_intrinsic.txt'
     files_to_crop = [
@@ -44,8 +49,10 @@ def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float):
     hori_fov_rad = np.deg2rad(hori_fov_deg)
     vert_fov_rad = np.deg2rad(vert_fov_deg)
     new_w = int(round(2 * fx * np.tan(hori_fov_rad / 2)))
+    new_w = min(new_w, int(2 * cx))
     new_h = int(round(2 * fy * np.tan(vert_fov_rad / 2)))
-    
+    new_w = int(round(new_w / 4) * 4)
+    new_h = int(round(new_h / 4) * 4)
     # 确保新尺寸为正数
     if new_w <= 0 or new_h <= 0:
         print(f"\n[Error] Calculated new dimensions ({new_w}x{new_h}) are invalid. Skipping {scene_dir.name}.")
@@ -106,10 +113,13 @@ def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float):
             elif filename.endswith('.npy'):
                 data = np.load(input_path)
                 cropped_data = data[y1:y2, x1:x2]
-                np.save(output_path, cropped_data)
+                # 检查输出文件是否已存在，避免重复处理
+                if not output_path.exists():
+                    np.save(output_path, cropped_data)
         except Exception as e:
             # 打印处理单个文件时发生的错误
             print(f"\n[Error] Failed to process {input_path}: {e}")
+            continue  # 继续处理其他文件
 
     # 5. 创建并保存新的相机内参文件
     new_cx = new_w / 2.0
@@ -122,17 +132,24 @@ def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float):
     ], dtype=np.float32)
 
     new_intrinsic_path = scene_dir / 'cropped_cam_intrinsic.txt'
-    np.savetxt(new_intrinsic_path, new_intrinsics, fmt='%.6f', delimiter=' ')
+    # 检查文件是否已存在，避免重复写入
+    if not new_intrinsic_path.exists():
+        try:
+            np.savetxt(new_intrinsic_path, new_intrinsics, fmt='%.6f', delimiter=' ')
+        except Exception as e:
+            print(f"\n[Error] Failed to save intrinsics for {scene_dir.name}: {e}")
     
 
 if __name__ == '__main__':
     # --- 配置参数 ---
     # 数据集根目录 (使用你提供的路径)
-    ROOT_DATASET_DIR = Path('./processed_dataset/vfov12hfov60/')
+    from config.hyperparam import Hori_fov, Vert_fov
+    sonar_type = "vfov12hfov60"
+    # sonar_type = "vfov20hfov130"
+    ROOT_DATASET_DIR = Path(f'./processed_dataset/{sonar_type}/')
     # 新的视场角（单位：度）
-    HORI_FOV = 60.0
-    VERT_FOV = 12.0
-    # ----------------
+    HORI_FOV = Hori_fov
+    VERT_FOV = Vert_fov
 
     if not ROOT_DATASET_DIR.is_dir():
         print(f"Error: Root directory '{ROOT_DATASET_DIR}' not found.")
@@ -140,7 +157,11 @@ if __name__ == '__main__':
         sys.exit(1)
 
     # 首先获取所有需要处理的子文件夹列表
-    directories_to_process = [d for d in ROOT_DATASET_DIR.iterdir() if d.is_dir()]
+    # directories_to_process = [d for d in ROOT_DATASET_DIR.iterdir() if d.is_dir()]
+    directories_to_process = [
+        d for d in ROOT_DATASET_DIR.iterdir() 
+        if d.is_dir() and not d.name.startswith('green_water')
+    ]
     
     if not directories_to_process:
         print(f"No subdirectories found in '{ROOT_DATASET_DIR}'.")
@@ -151,6 +172,10 @@ if __name__ == '__main__':
     # 使用tqdm来创建一个进度条
     for scene_directory in tqdm(directories_to_process, desc="Processing Scenes", unit="dir"):
         if scene_directory.is_dir():
-            process_scene(scene_directory, HORI_FOV, VERT_FOV)
+            try:
+                process_scene(scene_directory, HORI_FOV, VERT_FOV)
+            except Exception as e:
+                print(f"\n[Error] Failed to process directory {scene_directory.name}: {e}")
+                continue  # 继续处理下一个目录
 
     print("\n--- All scenes processed. ---")
