@@ -32,7 +32,7 @@ Panels:
   - Class: rviz/Time
     Name: Time
     SyncMode: 0
-    SyncSource: Image
+    SyncSource: ""
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -121,16 +121,12 @@ Visualization Manager:
           Value: true
         camera_link:
           Value: true
-        camera_link_optical:
-          Value: false
         dvl_link:
           Value: false
         imu_link:
           Value: true
         sonar_link:
           Value: false
-        world:
-          Value: true
       Marker Alpha: 1
       Marker Scale: 1
       Name: TF
@@ -138,17 +134,15 @@ Visualization Manager:
       Show Axes: true
       Show Names: true
       Tree:
-        world:
-          imu_link:
-            camera2_link:
-              {}
-            camera_link:
-              camera_link_optical:
-                {}
-            dvl_link:
-              {}
-            sonar_link:
-              {}
+        imu_link:
+          camera2_link:
+            {}
+          camera_link:
+            {}
+          dvl_link:
+            {}
+          sonar_link:
+            {}
       Update Interval: 0
       Value: true
     - Class: rviz/Image

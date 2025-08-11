@@ -19,15 +19,23 @@
 
 我们准备SonarSweep的目标是：对于每个图像，我们把他们按照timestamp划归到一个文件夹下面，文件夹命名规则如下{scenerio_name}_{index} 保存到raw_dataset
 
+# STEP 1 record bag in raw_dataset
 1. rosparam set use_sim_time false
 2. rosbag record -O dataset.bag /isaacsim/camera/camera_info /isaacsim/camera/depth/image_raw /isaacsim/camera/image_raw /isaacsim/camera2/depth/image_raw /isaacsim/camera2/image_raw /isaacsim/imu/data /isaacsim/sonar_rect_image /tf /tf_static
 
 3. rosbag record -O background.bag /isaacsim/sonar_rect_image
 
+# STEP 2 
+set config/hyperparam.py
+    soanr fov
+python3 rosbag2folders.py
+
+
 ### 录制结果可视化
-1. rviz -d ./config.rviz 
+1. rviz -d ./config/config.rviz 
 2. python3 publish_pcd.py 
     project depth image to point cloud
+   python3 publish_converted_sonar.py
 3. rosparam set use_sim_time true
 4. rosbag play -l -r raw_dataset/green_water1/1.bag 
 
@@ -92,9 +100,17 @@
             这是一个非常强大且常用的技术，尤其适合水下图像。它不是对整张图进行均衡化，而是将图像分成许多小块，对每个小块分别进行直方图均衡，从而极大地提升局部对比度，让隐藏在蓝绿色背景中的细节显现出来。
 
 3. raw_dataset/retrieve_background_image.py
+
+    1. rosparam set use_sim_time false
+    2. rosbag record -O background.bag /isaacsim/sonar_rect_image
+
     为了帮助sonar denoise, 我需要录制一段没有任何物体的声纳图，也叫做sonar_background，我们需要录制一段 background.bag 并进行平均，得到的图像会被保存在 raw_dataset/{sonar_sensor_setting}/{scenerio}/background  (e.g. raw_dataset/vfov12hfov60/green_water1/background)
 
 
 ### some useful command
 rosbag filter dataset.bag 1.bag "t.to_sec() <= 1752220844.72 + 65.0"
 rosbag play -r 10 1.bag # SonarSweep_dataset
+
+
+scp -r vfov20hfov130  clp@10.26.1.168:/data2/home/clp/workspace/data/
+scp -r vfov12hfov60  lingpeng@10.20.35.16:/home/lingpeng/workspace/data
