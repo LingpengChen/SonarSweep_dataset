@@ -2,13 +2,26 @@ import numpy as np
 import cv2
 from pathlib import Path
 import sys
+import argparse
 from tqdm import tqdm  # 导入tqdm
 
 
 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
 
 
-def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float):
+IMAGE_FILES = [
+    'cam_left.png', 'cam_right.png',
+    'depth_left_visualize.png', 'depth_right_visualize.png'
+]
+DEPTH_FILES = ['depth_left.npy', 'depth_right.npy']
+CAMERA_FILES = {'cam_left.png', 'cam_right.png'}
+
+
+def round_down_to_multiple(value: float, multiple: int = 4) -> int:
+    return int(value) // multiple * multiple
+
+
+def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float, overwrite: bool = False):
     """
     处理单个场景文件夹：根据新的FOV裁剪图像并更新相机内参。
     此版本移除了不必要的print语句以提高性能。
@@ -18,22 +31,13 @@ def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float):
         hori_fov_deg (float): 新的目标水平视场角（度）。
         vert_fov_deg (float): 新的目标垂直视场角（度）。
     """
-    # 检查是否已经处理过（通过检查cropped_cam_intrinsic.txt是否存在）
     new_intrinsic_path = scene_dir / 'cropped_cam_intrinsic.txt'
-    if new_intrinsic_path.exists():
+    if new_intrinsic_path.exists() and not overwrite:
         return  # 已经处理过，跳过
         
-    # 1. 定义文件路径
     intrinsic_path = scene_dir / 'cam_intrinsic.txt'
-    files_to_crop = [
-        'cam_left.png', 'cam_right.png',
-        'depth_left.npy', 'depth_left_visualize.png',
-        'depth_right.npy', 'depth_right_visualize.png'
-    ]
 
-    # 2. 检查并读取原始相机内参
     if not intrinsic_path.exists():
-        # 这是一个关键警告，需要打印出来
         print(f"\n[Warning] 'cam_intrinsic.txt' not found in {scene_dir}. Skipping.")
         return
 
@@ -45,25 +49,6 @@ def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float):
         print(f"\n[Error] Failed to read or parse intrinsics from {intrinsic_path}: {e}. Skipping.")
         return
 
-    # 3. 计算新的图像尺寸和裁剪框
-    hori_fov_rad = np.deg2rad(hori_fov_deg)
-    vert_fov_rad = np.deg2rad(vert_fov_deg)
-    new_w = int(round(2 * fx * np.tan(hori_fov_rad / 2)))
-    new_w = min(new_w, int(2 * cx))
-    new_h = int(round(2 * fy * np.tan(vert_fov_rad / 2)))
-    new_w = int(round(new_w / 4) * 4)
-    new_h = int(round(new_h / 4) * 4)
-    # 确保新尺寸为正数
-    if new_w <= 0 or new_h <= 0:
-        print(f"\n[Error] Calculated new dimensions ({new_w}x{new_h}) are invalid. Skipping {scene_dir.name}.")
-        return
-
-    x1 = int(round(cx - new_w / 2))
-    y1 = int(round(cy - new_h / 2))
-    x2 = x1 + new_w
-    y2 = y1 + new_h
-    
-    # 检查原始图像尺寸以防裁剪框越界
     try:
         ref_image_path = scene_dir / 'cam_left.png'
         if not ref_image_path.exists():
@@ -81,40 +66,57 @@ def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float):
             return
             
         original_h, original_w = ref_image.shape[:2]
-
-        if x1 < 0 or y1 < 0 or x2 > original_w or y2 > original_h:
-            print(f"\n[Error] In {scene_dir.name}, calculated crop box [{x1}:{x2}, {y1}:{y2}] is out of original image bounds [{original_w}x{original_h}]. Skipping.")
-            return
-            
     except Exception as e:
         print(f"\n[Error] In {scene_dir.name}, could not read reference image to get dimensions: {e}. Skipping.")
         return
 
+    target_w = 2 * fx * np.tan(np.deg2rad(hori_fov_deg) / 2)
+    target_h = 2 * fy * np.tan(np.deg2rad(vert_fov_deg) / 2)
+    max_w = 2 * min(cx, original_w - cx)
+    max_h = 2 * min(cy, original_h - cy)
+    new_w = round_down_to_multiple(min(target_w, max_w))
+    new_h = round_down_to_multiple(min(target_h, max_h))
+
+    if new_w <= 0 or new_h <= 0:
+        print(f"\n[Error] Calculated crop size ({new_w}x{new_h}) is invalid. Skipping {scene_dir.name}.")
+        return
+
+    x1 = max(0, int(round(cx - new_w / 2)))
+    y1 = max(0, int(round(cy - new_h / 2)))
+    x2 = min(original_w, x1 + new_w)
+    y2 = min(original_h, y1 + new_h)
+
     # 4. 遍历文件，进行裁剪并保存
-    for filename in files_to_crop:
+    for filename in IMAGE_FILES + DEPTH_FILES:
         input_path = scene_dir / filename
         if not input_path.exists():
             continue  # 静默跳过不存在的文件
 
         output_path = scene_dir / f"cropped_{filename}"
-        enhanced_gray_output_path = scene_dir / f"enhanced_gray_{filename}"
         
         try:
-            # rgb
             if filename.endswith('.png'):
                 img = cv2.imread(str(input_path), cv2.IMREAD_UNCHANGED)
+                if img is None:
+                    print(f"\n[Warning] Could not read image: {input_path}")
+                    continue
                 cropped_img = img[y1:y2, x1:x2]
-                cv2.imwrite(str(output_path), cropped_img)
-                gray_standard = cv2.cvtColor(cropped_img, cv2.COLOR_BGR2GRAY)
-                enhanced_gray_standard = clahe.apply(gray_standard)
-                cv2.imwrite(str(enhanced_gray_output_path), enhanced_gray_standard)
+                if overwrite or not output_path.exists():
+                    cv2.imwrite(str(output_path), cropped_img)
+
+                if filename in CAMERA_FILES:
+                    enhanced_gray_output_path = scene_dir / f"enhanced_gray_{filename}"
+                    if overwrite or not enhanced_gray_output_path.exists():
+                        if cropped_img.ndim == 2:
+                            gray_standard = cropped_img
+                        else:
+                            gray_standard = cv2.cvtColor(cropped_img, cv2.COLOR_BGR2GRAY)
+                        cv2.imwrite(str(enhanced_gray_output_path), clahe.apply(gray_standard))
                 
-            
             elif filename.endswith('.npy'):
                 data = np.load(input_path)
                 cropped_data = data[y1:y2, x1:x2]
-                # 检查输出文件是否已存在，避免重复处理
-                if not output_path.exists():
+                if overwrite or not output_path.exists():
                     np.save(output_path, cropped_data)
         except Exception as e:
             # 打印处理单个文件时发生的错误
@@ -122,8 +124,8 @@ def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float):
             continue  # 继续处理其他文件
 
     # 5. 创建并保存新的相机内参文件
-    new_cx = new_w / 2.0
-    new_cy = new_h / 2.0
+    new_cx = cx - x1
+    new_cy = cy - y1
     
     new_intrinsics = np.array([
         [fx, 0, new_cx],
@@ -131,9 +133,7 @@ def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float):
         [0, 0, 1]
     ], dtype=np.float32)
 
-    new_intrinsic_path = scene_dir / 'cropped_cam_intrinsic.txt'
-    # 检查文件是否已存在，避免重复写入
-    if not new_intrinsic_path.exists():
+    if overwrite or not new_intrinsic_path.exists():
         try:
             np.savetxt(new_intrinsic_path, new_intrinsics, fmt='%.6f', delimiter=' ')
         except Exception as e:
@@ -144,24 +144,25 @@ if __name__ == '__main__':
     # --- 配置参数 ---
     # 数据集根目录 (使用你提供的路径)
     from config.hyperparam import Hori_fov, Vert_fov
-    sonar_type = "vfov12hfov60"
-    # sonar_type = "vfov20hfov130"
-    ROOT_DATASET_DIR = Path(f'./processed_dataset/{sonar_type}/')
+    parser = argparse.ArgumentParser(description="Crop camera/depth data to sonar FOV and enhance RGB images.")
+    parser.add_argument('--sonar_type', type=str, default='vfov12hfov60', help='Sonar type folder name.')
+    parser.add_argument('--root_dir', type=Path, default=None, help='Processed dataset directory.')
+    parser.add_argument('--hori_fov', type=float, default=Hori_fov, help='Target horizontal FOV in degrees.')
+    parser.add_argument('--vert_fov', type=float, default=Vert_fov, help='Target vertical FOV in degrees.')
+    parser.add_argument('--overwrite', action='store_true', help='Regenerate cropped and enhanced files.')
+    args = parser.parse_args()
+
+    ROOT_DATASET_DIR = args.root_dir or Path(f'./processed_dataset/{args.sonar_type}/')
     # 新的视场角（单位：度）
-    HORI_FOV = Hori_fov
-    VERT_FOV = Vert_fov
+    HORI_FOV = args.hori_fov
+    VERT_FOV = args.vert_fov
 
     if not ROOT_DATASET_DIR.is_dir():
         print(f"Error: Root directory '{ROOT_DATASET_DIR}' not found.")
         print("Please make sure the script is in the correct location or update the ROOT_DATASET_DIR variable.")
         sys.exit(1)
 
-    # 首先获取所有需要处理的子文件夹列表
-    # directories_to_process = [d for d in ROOT_DATASET_DIR.iterdir() if d.is_dir()]
-    directories_to_process = [
-        d for d in ROOT_DATASET_DIR.iterdir() 
-        if d.is_dir() and not d.name.startswith('green_water')
-    ]
+    directories_to_process = sorted(d for d in ROOT_DATASET_DIR.iterdir() if d.is_dir())
     
     if not directories_to_process:
         print(f"No subdirectories found in '{ROOT_DATASET_DIR}'.")
@@ -173,7 +174,7 @@ if __name__ == '__main__':
     for scene_directory in tqdm(directories_to_process, desc="Processing Scenes", unit="dir"):
         if scene_directory.is_dir():
             try:
-                process_scene(scene_directory, HORI_FOV, VERT_FOV)
+                process_scene(scene_directory, HORI_FOV, VERT_FOV, overwrite=args.overwrite)
             except Exception as e:
                 print(f"\n[Error] Failed to process directory {scene_directory.name}: {e}")
                 continue  # 继续处理下一个目录

@@ -173,7 +173,11 @@ def process_bag(bag_path, output_folder_base, Sonar_denoiser: SonarDenoiser, tf_
         
         # 查找最近邻的消息
         def find_nearest(key, t_ref_sec):
+            if len(timestamps[key]) == 0:
+                return None
             idx = np.searchsorted(timestamps[key], t_ref_sec, side="left")
+            if idx == len(timestamps[key]):
+                idx -= 1
             if idx > 0 and (idx == len(timestamps[key]) or \
                 abs(t_ref_sec - timestamps[key][idx-1]) < abs(t_ref_sec - timestamps[key][idx])):
                 idx = idx - 1
@@ -207,7 +211,7 @@ def process_bag(bag_path, output_folder_base, Sonar_denoiser: SonarDenoiser, tf_
             continue
 
         # 6. 创建输出目录
-        output_folder = output_folder_base +str(f"_{current_index}")
+        output_folder = f"{output_folder_base}_{current_index}"
         os.makedirs(output_folder, exist_ok=True)
         
         # 7. 转换并保存数据
@@ -275,6 +279,33 @@ def process_bag(bag_path, output_folder_base, Sonar_denoiser: SonarDenoiser, tf_
 
     return current_index
 
+
+def write_datapoint_list(output_dir, bag_name):
+    """
+    Save all datapoint folder names for one bag into ../{bag_name}.txt.
+    """
+    output_dir = os.path.abspath(output_dir)
+    list_dir = os.path.dirname(output_dir)
+    prefix = f"{bag_name}_"
+
+    def sort_key(folder_name):
+        suffix = folder_name[len(prefix):]
+        return int(suffix) if suffix.isdigit() else suffix
+
+    datapoint_names = sorted(
+        name for name in os.listdir(output_dir)
+        if name.startswith(prefix) and os.path.isdir(os.path.join(output_dir, name))
+    )
+    datapoint_names.sort(key=sort_key)
+
+    list_path = os.path.join(list_dir, f"{bag_name}.txt")
+    with open(list_path, 'w', encoding='utf-8') as f:
+        for name in datapoint_names:
+            f.write(f"{name}\n")
+
+    print(f"Saved {len(datapoint_names)} datapoint names to '{list_path}'")
+
+
 def main():
     try:
         import rospy
@@ -282,12 +313,13 @@ def main():
     except Exception as e:
         print(f"Could not set /use_sim_time: {e}")
     
-    sonar_type = "vfov12hfov60"
-    # sonar_type = "vfov20hfov130"
     parser = argparse.ArgumentParser(description="Process ROS bags to extract synchronized sensor data.")
-    parser.add_argument('--input_dir', type=str, default=f'raw_dataset/{sonar_type}', help='Path to the raw dataset directory.')
-    parser.add_argument('--output_dir', type=str, default=f'processed_dataset/{sonar_type}', help='Path to the output directory.')
+    parser.add_argument('--sonar_type', type=str, default='vfov12hfov60', help='Sonar type folder name.')
+    parser.add_argument('--input_dir', type=str, default=None, help='Path to the raw dataset directory.')
+    parser.add_argument('--output_dir', type=str, default=None, help='Path to the output directory.')
     args = parser.parse_args()
+    args.input_dir = args.input_dir or os.path.join('raw_dataset', args.sonar_type)
+    args.output_dir = args.output_dir or os.path.join('processed_dataset', args.sonar_type)
 
     if not os.path.isdir(args.input_dir):
         print(f"Error: Input directory '{args.input_dir}' not found.")
@@ -298,67 +330,38 @@ def main():
     # tf_buffer 是一个在整个程序运行期间都存在的对象
     tf_buffer = tf2_ros.Buffer(cache_time=rospy.Duration(3600.0)) 
     
-    # 查找所有场景文件夹
-    scenario_folders = sorted([d for d in os.listdir(args.input_dir) if os.path.isdir(os.path.join(args.input_dir, d))])
-    
-    for scenario_name in tqdm(scenario_folders, desc="Scenarios"):
-        if scenario_name != 'blue_water_visual_degraded': continue
-        print(f"Processing scenario: {scenario_name}")
-        scenario_path = os.path.join(args.input_dir, scenario_name)
-        
-        # get background sonar image for denoising    
-        try:
-            BACKGROUND_DATA_DIR = scenario_path + '/background/'
-            IMAGE_FORMAT = 'png' # 背景图的格式
+    background_cache_path = f'./denoise/avg_background_{args.sonar_type}.png'
+    try:
+        background_dir = os.path.join(args.input_dir, 'background')
+        avg_background_np_float = compute_average_background(background_dir, img_format='png')
+        avg_background_np = np.clip(avg_background_np_float, 0, 255).astype(np.uint8)
+        cv2.imwrite(background_cache_path, avg_background_np)
+        print(f"Average background image saved to '{background_cache_path}'")
+    except Exception as e:
+        print(f"Cannot compute background from '{background_dir}': {e}")
+        avg_background_np = cv2.imread(background_cache_path, cv2.IMREAD_GRAYSCALE)
+        if avg_background_np is None:
+            print(f"Cannot load default background image: {background_cache_path}")
+            sys.exit(1)
+        print(f"Default background image loaded from '{background_cache_path}'")
 
-            # MODIFIED: 计算平均背景图，现在从图像文件读取
-            avg_background_np_float = compute_average_background(BACKGROUND_DATA_DIR, img_format=IMAGE_FORMAT)
-            avg_background_np = np.clip(avg_background_np_float, 0, 255).astype(np.uint8)
-            # MODIFIED: 保存平均背景图
-            cv2.imwrite(f'./denoise/avg_background_{sonar_type}.png', avg_background_np)
-            print(f"Average background image computed and saved to './denoise/avg_background_{sonar_type}.png'")
-            MODEL_PATH = './denoise/model/scunet_gray_25.pth'
-            sonar_denoiser = SonarDenoiser(MODEL_PATH, avg_background_np)
-          
-        
-        except Exception as e:
-            print(f"Cannot find background data at {BACKGROUND_DATA_DIR}: Detailed error {e}")
-            try: # try to load the default background
-                avg_background_np = cv2.imread(f'./denoise/avg_background_{sonar_type}.png', cv2.IMREAD_GRAYSCALE)
-                if avg_background_np is None:
-                    raise FileNotFoundError("Default background image not found.")
-                else:
-                    print(f"Default background image loaded from './denoise/avg_background_{sonar_type}.png'")
-                sonar_denoiser = SonarDenoiser('./denoise/model/scunet_gray_25.pth', avg_background_np)
-            except Exception as e:
-                print(f"Cannot load default background image: {e}")
-                sys.exit(1)
-        
-        
-        # now look into each bag in the scenerio
-        bag_files = sorted(
-            file_path for file_path in glob.glob(os.path.join(scenario_path, '*.bag'))
-            if os.path.basename(file_path) != 'background.bag'
-        )
-        # ['raw_dataset/green_water1/1.bag', 'raw_dataset/green_water1/10.bag', 'raw_dataset/green_water1/2.bag', 'raw_dataset/green_water1/3.bag', 'raw_dataset/green_water1/4.bag', 'raw_dataset/green_water1/5.bag', 'raw_dataset/green_water1/6.bag', 'raw_dataset/green_water1/7.bag', 'raw_dataset/green_water1/8.bag', 'raw_dataset/green_water1/9.bag', 'raw_dataset/green_water1/circular1.bag', 'raw_dataset/green_water1/circular2.bag', 'raw_dataset/green_water1/circular3.bag']
-        if not bag_files:
-            print(f"Warning: No .bag files found in {scenario_path}")
-            continue
-        else:
-            print(f"Found {len(bag_files)} bag files in {scenario_path}:")
-        
-        for bag_file in bag_files:
-            # 从完整路径中提取不带 .bag 后缀的文件名
-            # os.path.basename('path/to/my_bag.bag') -> 'my_bag.bag'
-            # os.path.splitext('my_bag.bag') -> ('my_bag', '.bag')
-            bag_name_with_ext = os.path.basename(bag_file)
-            bag_name_without_ext = os.path.splitext(bag_name_with_ext)[0]
-            
-            # 调用更新后的函数，传入新的 bag_name
-            # 注意：process_bag现在返回的是这个bag处理的帧数，我们不再需要用它来累加
-            output_folder_base = os.path.join(args.output_dir, f"{scenario_name}_{bag_name_without_ext}" )
-            process_bag(bag_file, output_folder_base, sonar_denoiser, tf_buffer)
-        break
+    sonar_denoiser = SonarDenoiser('./denoise/model/scunet_gray_25.pth', avg_background_np)
+
+    bag_files = sorted(
+        file_path for file_path in glob.glob(os.path.join(args.input_dir, '*.bag'))
+        if os.path.basename(file_path) != 'background.bag'
+    )
+    if not bag_files:
+        print(f"Warning: No .bag files found in {args.input_dir}")
+        return
+
+    print(f"Found {len(bag_files)} bag files in {args.input_dir}")
+    for bag_file in tqdm(bag_files, desc="Bags"):
+        bag_name = os.path.splitext(os.path.basename(bag_file))[0]
+        output_folder_base = os.path.join(args.output_dir, bag_name)
+        process_bag(bag_file, output_folder_base, sonar_denoiser, tf_buffer)
+        write_datapoint_list(args.output_dir, bag_name)
+
     print("\nProcessing complete!")
 
 if __name__ == '__main__':

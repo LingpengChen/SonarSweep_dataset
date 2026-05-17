@@ -5,7 +5,8 @@ import cv2
 import os
 import glob
 
-from .network_scunet import SCUNet as net
+# from .network_scunet import SCUNet as net
+from denoise.network_scunet import SCUNet as net
 
 class SonarDenoiser:
     """
@@ -117,7 +118,7 @@ if __name__ == '__main__':
     
     # NEW: 假设你的目标图和背景图现在是.png格式
     TARGET_IMAGE_PATH = './test_image/1_img/1752220845.3731437.png' # 例如
-    BACKGROUND_DATA_DIR = './test_image/background/'
+    BACKGROUND_DATA_DIR = '/media/clp/T9/SonarSweep_dataset/raw_dataset/vfov12hfov60/background/'
     IMAGE_FORMAT = 'png' # 背景图的格式
 
     # MODIFIED: 计算平均背景图，现在从图像文件读取
