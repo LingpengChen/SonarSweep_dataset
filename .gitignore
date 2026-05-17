@@ -1,5 +1,4 @@
-/raw_dataset/
-/shenyuan.zip
+/raw_dataset/test.bag
 /processed_dataset/
 __pycache__/
 .vscode/
