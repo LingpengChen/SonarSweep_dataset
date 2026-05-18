@@ -76,7 +76,7 @@ A reference `test.bag` is provided for quick testing. You can download it with:
 python3 download_rosbag.py
 ```
 
-You can also download it manually from the [SonarSweep dataset page on Hugging Face](https://huggingface.co/datasets/Lingpenghaha/Sonarsweep_dataset/tree/main).
+**You can also download it manually from the [SonarSweep dataset page on Hugging Face](https://huggingface.co/datasets/Lingpenghaha/Sonarsweep_dataset/tree/main).**
 
 ### Inspect a Recorded Bag
 
@@ -84,17 +84,9 @@ Run the following commands to inspect a recorded bag in RViz:
 
 ```bash
 roscore
-```
-
-In a new terminal:
-
-```bash
+# In a new terminal:
 rviz -d config/config_isaacsim.rviz
-```
-
-In another terminal:
-
-```bash
+# In another terminal:
 rosparam set use_sim_time true
 rosbag play -l -r 10 raw_dataset/vfov12hfov60/test.bag
 ```
