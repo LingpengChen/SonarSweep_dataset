@@ -1,4 +1,11 @@
+<<<<<<< HEAD
 /raw_dataset/test.bag
+=======
+/raw_dataset/*
+!/raw_dataset/retrieve_background_image.py
+/shenyuan.zip
+>>>>>>> 2167d9ef0f54950e2737f90a903d4b2c7397c562
 /processed_dataset/
 __pycache__/
 .vscode/
+
