@@ -4,3 +4,5 @@
 /processed_dataset/
 __pycache__/
 .vscode/
+/config/hyperparam_real.py
+/fig/test_bag_demo.mp4

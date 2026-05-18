@@ -1,36 +1,29 @@
 # SonarSweep Dataset Preparation
 
-This repository converts ROS bags recorded in OceanSim/IsaacSim into a folder-based dataset that can be used to train and test the SonarSweep model. Each synchronized timestamp is exported as one datapoint folder containing stereo camera images, depth maps, sonar images, camera pose, camera intrinsics, sonar intrinsics, and the camera-to-sonar extrinsic transform.
+This repository converts ROS bags recorded in [OceanSim](https://github.com/LingpengChen/LIAS_oceansim) into a folder-based dataset for training and evaluating [SonarSweep](https://github.com/LIAS-CUHKSZ/SonarSweep). Each synchronized timestamp is exported as one datapoint folder containing stereo camera images, depth maps, sonar images, camera pose, camera intrinsics, sonar intrinsics, and the camera-to-sonar extrinsic transform.
+
+![Test bag demo](fig/test_bag_demo.gif)
+
+## Dataset Layout
 
 The expected raw data layout is:
 
 ```text
 raw_dataset/
 └── {sonar_type}/
-    ├── dataset.bag
-    ├── background.bag
-    └── background/
-        ├── {timestamp}.png
-        └── ...
+    ├── {bag_name}.bag    # Recorded ROS bag dataset
+    └── background.bag    # Empty-scene sonar background for denoising
 ```
 
 The processed output layout is:
 
 ```text
 processed_dataset/
-├── dataset.txt
+├── {bag_name}.txt        # Datapoint folder names, one per line
 └── {sonar_type}/
-    ├── dataset_0/
-    ├── dataset_1/
+    ├── {bag_name}_0/     # First datapoint exported from {bag_name}.bag
+    ├── {bag_name}_1/
     └── ...
-```
-
-`processed_dataset/dataset.txt` contains one datapoint folder name per line:
-
-```text
-dataset_0
-dataset_1
-dataset_2
 ```
 
 ## Recorded Topics
@@ -49,11 +42,15 @@ The simulator should publish the following topics:
 /tf_static
 ```
 
-In the simulator setup, the left camera is colocated with the sonar. The right camera is used as the main camera frame, and the script saves `cam_right_pose.txt` plus `T_camright2sonar.txt`.
+In the simulator setup, the left camera is colocated with the sonar. The right camera is used as the main camera frame, so the converter saves `cam_right_pose.txt` and `T_camright2sonar.txt`.
+
+This configuration is intentional: it verifies that SonarSweep can explicitly handle the sonar-camera extrinsic transform by warping sonar information into a camera frame located at a different position.
 
 ## Step 1: Record ROS Bags
 
-Create a folder for the target sonar setting:
+Create a folder for the target sonar setting. In our real experiments, we use an M1200d sonar with a horizontal FOV of 60 degrees and a vertical FOV of 12 degrees in high-frequency mode, so the example folder is named `vfov12hfov60`.
+
+You can also record data with other sensor settings, such as `vfov20hfov130`, by changing the sonar parameters in [OceanSim](https://github.com/LingpengChen/LIAS_oceansim).
 
 ```bash
 mkdir -p raw_dataset/vfov12hfov60
@@ -64,7 +61,7 @@ Record the main dataset bag:
 
 ```bash
 rosparam set use_sim_time false
-rosbag record -O dataset.bag \
+rosbag record -O {bag_name}.bag \
   /isaacsim/camera/camera_info \
   /isaacsim/camera/depth/image_raw \
   /isaacsim/camera/image_raw \
@@ -76,36 +73,72 @@ rosbag record -O dataset.bag \
   /tf_static
 ```
 
+A reference `test.bag` is provided for quick testing. You can download it with:
+
+```bash
+python3 download_rosbag.py
+```
+
+You can also download it manually from the [SonarSweep dataset page on Hugging Face](https://huggingface.co/datasets/Lingpenghaha/Sonarsweep_dataset/tree/main).
+
+### Inspect a Recorded Bag
+
+Run the following commands to inspect a recorded bag in RViz:
+
+```bash
+roscore
+```
+
+In a new terminal:
+
+```bash
+rviz -d config/config_isaacsim.rviz
+```
+
+In another terminal:
+
+```bash
+rosparam set use_sim_time true
+rosbag play -l -r 10 raw_dataset/vfov12hfov60/test.bag
+```
+
+Optional helper scripts can publish the depth point cloud and Cartesian sonar image:
+
+```bash
+python3 publish_pcd.py
+python3 publish_converted_sonar.py
+```
+
+## Step 2: Record and Extract Background Images
+
 Record a background sonar bag with no foreground objects:
 
 ```bash
 rosbag record -O background.bag /isaacsim/sonar_rect_image
 ```
 
-## Step 2: Extract Background Images
+The example background bag is already provided at:
 
-The denoising pipeline uses an averaged empty-scene sonar background. Configure `base_dir` in `raw_dataset/retrieve_background_image.py`, then run the script from inside `raw_dataset`:
+```text
+raw_dataset/vfov12hfov60/background.bag
+```
+
+The denoising pipeline uses an averaged empty-scene sonar background. Configure `base_dir` in `raw_dataset/retrieve_background_image.py`, then run:
 
 ```bash
 cd raw_dataset
 python3 retrieve_background_image.py
 ```
 
-For `base_dir = "./vfov12hfov60"`, this reads:
+The averaged background image will be saved under:
 
 ```text
-raw_dataset/vfov12hfov60/background.bag
-```
-
-and writes:
-
-```text
-raw_dataset/vfov12hfov60/background/{timestamp}.png
+raw_dataset/{sonar_type}/background/
 ```
 
 ## Step 3: Configure Sonar Parameters
 
-Edit `config/hyperparam.py` before conversion. The important sonar parameters are:
+Edit `config/hyperparam.py` before conversion. The sonar parameters used by `test.bag` are:
 
 ```python
 Min_range = 0.1
@@ -128,29 +161,22 @@ Run the main converter from the repository root:
 python3 rosbag2folders.py --sonar_type vfov12hfov60
 ```
 
-By default, this reads:
+By default, the converter reads:
 
 ```text
 raw_dataset/vfov12hfov60/*.bag
 ```
 
-excluding `background.bag`, and writes:
+It excludes `background.bag` and writes datapoints to:
 
 ```text
 processed_dataset/vfov12hfov60/{bag_name}_{index}/
 ```
 
-For example:
-
-```text
-processed_dataset/vfov12hfov60/dataset_0/
-processed_dataset/vfov12hfov60/dataset_1/
-```
-
 It also writes:
 
 ```text
-processed_dataset/dataset.txt
+processed_dataset/{bag_name}.txt
 ```
 
 with one datapoint folder name per line.
@@ -194,13 +220,13 @@ sonar_denoise.png
 
 ### Sonar Data
 
-The raw simulator sonar image covers `Min_range` to `Max_range`. The converter pads the image so `sonar_rect.png` represents `0` to `Max_range`.
+The raw simulator sonar image covers `Min_range` to `Max_range`. The converter pads the image so `sonar_rect.png` represents the full `0` to `Max_range` range.
 
 `sonar.png` is a Cartesian visualization generated from the padded rectangular sonar image.
 
-`sonar_rect_denoise.png` is the denoised rectangular sonar image. `sonar_denoise.png` is its Cartesian visualization.
+`sonar_rect_denoise.png` is the denoised rectangular sonar image, and `sonar_denoise.png` is its Cartesian visualization.
 
-The denoiser uses the averaged background image from `raw_dataset/{sonar_type}/background` and the SCUNet model at:
+The denoiser uses the averaged background image from `raw_dataset/{sonar_type}/background/` and the SCUNet model at:
 
 ```text
 denoise/model/scunet_gray_25.pth
@@ -208,7 +234,7 @@ denoise/model/scunet_gray_25.pth
 
 ## Step 5: Crop and Enhance Camera Images
 
-After conversion, crop the camera and depth images to the sonar FOV and generate grayscale CLAHE-enhanced camera images:
+After conversion, crop the camera and depth images to match the sonar FOV, then generate grayscale CLAHE-enhanced camera images for SonarSweep. SonarSweep uses a single-channel grayscale camera image with the same FOV as the sonar image.
 
 ```bash
 python3 crop_and_enhance_images.py --sonar_type vfov12hfov60
@@ -226,52 +252,6 @@ enhanced_gray_cam_left.png
 enhanced_gray_cam_right.png
 ```
 
-To regenerate existing cropped outputs:
+After these steps, the dataset is ready for sonar-camera fusion depth estimation with SonarSweep.
 
-```bash
-python3 crop_and_enhance_images.py --sonar_type vfov12hfov60 --overwrite
-```
-
-You can also specify the processed dataset directory directly:
-
-```bash
-python3 crop_and_enhance_images.py --root_dir processed_dataset/vfov12hfov60
-```
-
-## Visualization
-
-To inspect a recorded bag:
-
-```bash
-rosparam set use_sim_time true
-rviz -d rviz/visualizer.rviz
-rosbag play -l -r 10 raw_dataset/vfov12hfov60/dataset.bag
-```
-
-Optional helper scripts:
-
-```bash
-python3 publish_pcd.py
-python3 publish_converted_sonar.py
-```
-
-## Useful Commands
-
-Filter a short bag segment:
-
-```bash
-rosbag filter dataset.bag 1.bag "t.to_sec() <= 1752220844.72 + 65.0"
-```
-
-Play a bag faster:
-
-```bash
-rosbag play -r 10 dataset.bag
-```
-
-Copy processed data to another machine:
-
-```bash
-scp -r processed_dataset/vfov12hfov60 user@host:/path/to/data/
-scp processed_dataset/dataset.txt user@host:/path/to/data/
-```
+If you do not want to run the full preparation pipeline, you can directly download the prepared `vfov12hfov60` dataset from the [SonarSweep dataset page on Hugging Face](https://huggingface.co/datasets/Lingpenghaha/Sonarsweep_dataset/tree/main).
