@@ -98,7 +98,7 @@ python3 publish_pcd.py
 python3 publish_converted_sonar.py
 ```
 
-## Step 2: Record and Extract Background Images
+## Step 2: Record and Extract Background Images for Sonar Denoising
 
 Record a background sonar bag with no foreground objects:
 
@@ -106,28 +106,18 @@ Record a background sonar bag with no foreground objects:
 rosbag record -O background.bag /isaacsim/sonar_rect_image
 ```
 
-The example background bag is already provided at:
-
-```text
-raw_dataset/vfov12hfov60/background.bag
-```
-
-The denoising pipeline uses an averaged empty-scene sonar background. Configure `base_dir` in `raw_dataset/retrieve_background_image.py`, then run:
+The example background bag is already provided at `raw_dataset/vfov12hfov60/background.bag`. The denoising pipeline uses an averaged empty-scene sonar background. Configure `base_dir` in `raw_dataset/retrieve_background_image.py`, then run:
 
 ```bash
 cd raw_dataset
 python3 retrieve_background_image.py
 ```
 
-The averaged background image will be saved under:
-
-```text
-raw_dataset/{sonar_type}/background/
-```
+The averaged background image will be saved under `raw_dataset/{sonar_type}/background/`
 
 ## Step 3: Configure Sonar Parameters
 
-Edit `config/hyperparam.py` before conversion. The sonar parameters used by `test.bag` are:
+Edit `config/hyperparam.py` before dataset conversion. The sonar parameters used by `test.bag` are:
 
 ```python
 Min_range = 0.1
@@ -150,25 +140,9 @@ Run the main converter from the repository root:
 python3 rosbag2folders.py --sonar_type vfov12hfov60
 ```
 
-By default, the converter reads:
+By default, the converter reads `raw_dataset/vfov12hfov60/*.bag`. It excludes `background.bag` and writes datapoints to `processed_dataset/vfov12hfov60/{bag_name}_{index}/`
 
-```text
-raw_dataset/vfov12hfov60/*.bag
-```
-
-It excludes `background.bag` and writes datapoints to:
-
-```text
-processed_dataset/vfov12hfov60/{bag_name}_{index}/
-```
-
-It also writes:
-
-```text
-processed_dataset/{bag_name}.txt
-```
-
-with one datapoint folder name per line.
+It also writes `processed_dataset/{bag_name}.txt` with one datapoint folder name per line.
 
 You can override the input and output directories:
 
@@ -178,7 +152,7 @@ python3 rosbag2folders.py \
   --output_dir processed_dataset/vfov12hfov60
 ```
 
-## Datapoint Contents
+### Datapoint Contents
 
 Each datapoint folder contains:
 
@@ -215,15 +189,11 @@ The raw simulator sonar image covers `Min_range` to `Max_range`. The converter p
 
 `sonar_rect_denoise.png` is the denoised rectangular sonar image, and `sonar_denoise.png` is its Cartesian visualization.
 
-The denoiser uses the averaged background image from `raw_dataset/{sonar_type}/background/` and the SCUNet model at:
-
-```text
-denoise/model/scunet_gray_25.pth
-```
+The denoiser uses the averaged background image from `raw_dataset/{sonar_type}/background/` and the SCUNet model at `denoise/model/scunet_gray_25.pth`
 
 ## Step 5: Crop and Enhance Camera Images
 
-After conversion, crop the camera and depth images to match the sonar FOV, then generate grayscale CLAHE-enhanced camera images for SonarSweep. SonarSweep uses a single-channel grayscale camera image with the same FOV as the sonar image.
+After conversion, crop the camera and depth images to match the sonar FOV, then generate grayscale CLAHE-enhanced camera images for SonarSweep. **SonarSweep takes a single-channel grayscale camera image as input, cropped to the same FOV as the corresponding sonar image.**
 
 ```bash
 python3 crop_and_enhance_images.py --sonar_type vfov12hfov60
