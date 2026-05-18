@@ -1,6 +1,6 @@
 # SonarSweep Dataset Preparation
 
-This repository converts ROS bags recorded in [OceanSim](https://github.com/LingpengChen/LIAS_oceansim) into a folder-based dataset for training and evaluating [SonarSweep](https://github.com/LIAS-CUHKSZ/SonarSweep). Each synchronized timestamp is exported as one datapoint folder containing stereo camera images, depth maps, sonar images, camera pose, camera intrinsics, sonar intrinsics, and the camera-to-sonar extrinsic transform.
+This repository **converts ROS bags recorded in [OceanSim](https://github.com/LingpengChen/LIAS_oceansim) into a folder-based dataset for training and evaluating [SonarSweep](https://github.com/LIAS-CUHKSZ/SonarSweep)**. Each synchronized timestamp is exported as one datapoint folder containing stereo camera images, depth maps, sonar images, camera pose, camera intrinsics, sonar intrinsics, and the camera-to-sonar extrinsic transform.
 
 ![Test bag demo](fig/test_bag_demo.gif)
 
@@ -44,20 +44,17 @@ The simulator should publish the following topics:
 
 In the simulator setup, the left camera is colocated with the sonar. The right camera is used as the main camera frame, so the converter saves `cam_right_pose.txt` and `T_camright2sonar.txt`.
 
-This configuration is intentional: it verifies that SonarSweep can explicitly handle the sonar-camera extrinsic transform by warping sonar information into a camera frame located at a different position.
+**This configuration is intentional: it verifies that SonarSweep can explicitly handle the sonar-camera extrinsic transform by warping sonar information into a camera frame located at a different position.**
 
 ## Step 1: Record ROS Bags
 
-Create a folder for the target sonar setting. In our real experiments, we use an M1200d sonar with a horizontal FOV of 60 degrees and a vertical FOV of 12 degrees in high-frequency mode, so the example folder is named `vfov12hfov60`.
+ In our real experiments, we use an Oculus M1200d sonar with a horizontal FOV of 60 degrees and a vertical FOV of 12 degrees in high-frequency mode, so the example folder is named `vfov12hfov60`.
 
 You can also record data with other sensor settings, such as `vfov20hfov130`, by changing the sonar parameters in [OceanSim](https://github.com/LingpengChen/LIAS_oceansim).
 
-```bash
-mkdir -p raw_dataset/vfov12hfov60
-cd raw_dataset/vfov12hfov60
-```
 
-Record the main dataset bag:
+
+First enter the raw-data folder with `cd raw_dataset/vfov12hfov60`, then record the main dataset bag:
 
 ```bash
 rosparam set use_sim_time false
