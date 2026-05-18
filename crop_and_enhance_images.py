@@ -3,7 +3,7 @@ import cv2
 from pathlib import Path
 import sys
 import argparse
-from tqdm import tqdm  # 导入tqdm
+from tqdm import tqdm
 
 
 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
@@ -23,17 +23,17 @@ def round_down_to_multiple(value: float, multiple: int = 4) -> int:
 
 def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float, overwrite: bool = False):
     """
-    处理单个场景文件夹：根据新的FOV裁剪图像并更新相机内参。
-    此版本移除了不必要的print语句以提高性能。
+    Crop one scene folder to the target FOV and update camera intrinsics.
 
     Args:
-        scene_dir (Path): 场景文件夹的路径。
-        hori_fov_deg (float): 新的目标水平视场角（度）。
-        vert_fov_deg (float): 新的目标垂直视场角（度）。
+        scene_dir: Scene folder path.
+        hori_fov_deg: Target horizontal FOV in degrees.
+        vert_fov_deg: Target vertical FOV in degrees.
+        overwrite: Regenerate outputs even if they already exist.
     """
     new_intrinsic_path = scene_dir / 'cropped_cam_intrinsic.txt'
     if new_intrinsic_path.exists() and not overwrite:
-        return  # 已经处理过，跳过
+        return
         
     intrinsic_path = scene_dir / 'cam_intrinsic.txt'
 
@@ -58,8 +58,6 @@ def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float, ove
             print(f"\n[Error] Cannot find a reference image in {scene_dir.name} to determine original size. Skipping.")
             return
 
-        # 使用 imread 获取尺寸，避免解码整个图像的开销（对于某些格式）
-        # 但对于png/jpeg, 完整的读取是必要的。
         ref_image = cv2.imread(str(ref_image_path), cv2.IMREAD_UNCHANGED)
         if ref_image is None:
             print(f"\n[Error] Could not read reference image: {ref_image_path}. Skipping.")
@@ -86,11 +84,10 @@ def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float, ove
     x2 = min(original_w, x1 + new_w)
     y2 = min(original_h, y1 + new_h)
 
-    # 4. 遍历文件，进行裁剪并保存
     for filename in IMAGE_FILES + DEPTH_FILES:
         input_path = scene_dir / filename
         if not input_path.exists():
-            continue  # 静默跳过不存在的文件
+            continue
 
         output_path = scene_dir / f"cropped_{filename}"
         
@@ -119,11 +116,9 @@ def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float, ove
                 if overwrite or not output_path.exists():
                     np.save(output_path, cropped_data)
         except Exception as e:
-            # 打印处理单个文件时发生的错误
             print(f"\n[Error] Failed to process {input_path}: {e}")
-            continue  # 继续处理其他文件
+            continue
 
-    # 5. 创建并保存新的相机内参文件
     new_cx = cx - x1
     new_cy = cy - y1
     
@@ -141,8 +136,6 @@ def process_scene(scene_dir: Path, hori_fov_deg: float, vert_fov_deg: float, ove
     
 
 if __name__ == '__main__':
-    # --- 配置参数 ---
-    # 数据集根目录 (使用你提供的路径)
     from config.hyperparam import Hori_fov, Vert_fov
     parser = argparse.ArgumentParser(description="Crop camera/depth data to sonar FOV and enhance RGB images.")
     parser.add_argument('--sonar_type', type=str, default='vfov12hfov60', help='Sonar type folder name.')
@@ -153,7 +146,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     ROOT_DATASET_DIR = args.root_dir or Path(f'./processed_dataset/{args.sonar_type}/')
-    # 新的视场角（单位：度）
     HORI_FOV = args.hori_fov
     VERT_FOV = args.vert_fov
 
@@ -170,13 +162,12 @@ if __name__ == '__main__':
 
     print(f"Found {len(directories_to_process)} directories to process in '{ROOT_DATASET_DIR}'.")
 
-    # 使用tqdm来创建一个进度条
     for scene_directory in tqdm(directories_to_process, desc="Processing Scenes", unit="dir"):
         if scene_directory.is_dir():
             try:
                 process_scene(scene_directory, HORI_FOV, VERT_FOV, overwrite=args.overwrite)
             except Exception as e:
                 print(f"\n[Error] Failed to process directory {scene_directory.name}: {e}")
-                continue  # 继续处理下一个目录
+                continue
 
     print("\n--- All scenes processed. ---")

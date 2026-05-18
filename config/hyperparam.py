@@ -10,11 +10,11 @@ Vert_fov = 12.0
 Angular_res = 0.4
 Img_width = 150
 
-WORLD_FRAME = 'world'  # 或 'odom', 'map' 等固定坐标系
-IMU_FRAME = 'imu_link' # 右相机 (/isaacsim/camera)
-RIGHT_CAM_FRAME = 'camera_link' # 右相机 (/isaacsim/camera)
-LEFT_CAM_FRAME = 'camera2_link' # 左相机 (/isaacsim/camera2)
-SONAR_FRAME = 'sonar_link'    # 声纳
+WORLD_FRAME = 'world'  # Fixed world frame. Alternatives include 'odom' or 'map'.
+IMU_FRAME = 'imu_link'
+RIGHT_CAM_FRAME = 'camera_link'  # Right camera (/isaacsim/camera)
+LEFT_CAM_FRAME = 'camera2_link'  # Left camera (/isaacsim/camera2)
+SONAR_FRAME = 'sonar_link'
 
 # 2. ROS Topics
 TOPIC_CAM_RIGHT_RGB = '/isaacsim/camera/image_raw'
@@ -26,7 +26,7 @@ TOPIC_SONAR = '/isaacsim/sonar_rect_image'
 TOPIC_TF = '/tf'
 TOPIC_TF_STATIC = '/tf_static'
 
-# 3. 同步容差 (秒)
+# 3. Synchronization tolerance in seconds.
 TIME_SLOP = 0.05 # 50ms
 
 SONAR_INTRINSIC_CONTENT = f"""# scalar1: max_range

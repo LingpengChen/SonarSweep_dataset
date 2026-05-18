@@ -7,5 +7,5 @@ snapshot_download(
     repo_id="Lingpenghaha/Sonarsweep_dataset",
     repo_type="dataset",
     allow_patterns="test.bag",
-    local_dir="./raw_dataset/test"
+    local_dir="./raw_dataset/vfov12hfov60"
 )

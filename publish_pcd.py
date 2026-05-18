@@ -9,7 +9,6 @@ from cv_bridge import CvBridge
 import message_filters
 from std_msgs.msg import Header
 
-# 新增导入
 import tf2_ros
 from geometry_msgs.msg import TransformStamped
 import tf.transformations
